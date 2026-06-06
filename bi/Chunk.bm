@@ -1,0 +1,11 @@
+Sub RefreshChunks Static
+    ChunksStart.X = GameState.PlayerChunk.X - MaxRenderDistance
+    ChunksStart.Z = GameState.PlayerChunk.Z - MaxRenderDistance
+    ChunksEnd.X = GameState.PlayerChunk.X + MaxRenderDistance
+    ChunksEnd.Z = GameState.PlayerChunk.Z + MaxRenderDistance
+    ReDim _Retain Chunks(ChunksStart.X To ChunksEnd.X, ChunksStart.Z To ChunksEnd.Z) As Chunk
+    ReDim _Retain PendingChunks(ChunksStart.X To ChunksEnd.X, ChunksStart.Z To ChunksEnd.Z) As PendingChunk
+End Sub
+Sub Build_ChunkQueue (Command As _Unsigned _Byte) Static
+    AddChunkToQueue GameState.PlayerChunk.X, GameState.PlayerChunk.Z
+End Sub

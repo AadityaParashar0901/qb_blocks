@@ -1,0 +1,3 @@
+Function ClampCycle! (A!, B!, C!) Static
+    ClampCycle! = _IIf(B! < A!, C!, _IIf(B! > C!, A!, B!))
+End Function

@@ -1,0 +1,33 @@
+Function getHash~%% (T$)
+    Dim I As _Unsigned Long, B~%%
+
+    B~%% = Asc(T$)
+    For I = 2 To Len(T$) - 1
+        B~%% = B~%% + Asc(T$, I)
+        B~%% = _ShL(B~%%, 1) Xor (I And B~%% And 1)
+    Next I
+
+    getHash~%% = B~%% + Asc(T$, I)
+End Function
+
+Function getBlockID~% (BlockName$)
+    Dim Hash~%%, Search~%
+    If Len(BlockName$) = 0 Then
+        getBlockID~% = 0
+        Exit Function
+    End If
+
+    Hash~%% = getHash~%%(BlockName$)
+    If BlockHashTable_Length(Hash~%%) = 1 Then
+        getBlockID~% = CVI(BlockHashTable_Code(Hash~%%))
+        Exit Function
+    End If
+
+    Search~% = _ShL(ListStringSearch(BlockHashTable_List(Hash~%%), BlockName$), 1)
+    If Search~% = 0 Then
+        WriteLog "[getBlockID(" + BlockName$ + ")]: Error: Block not found!"
+        Exit Function
+    End If
+
+    getBlockID~% = Asc(BlockHashTable_Code(Hash~%%), Search~% - 1) + _ShL(Asc(BlockHashTable_Code(Hash~%%), Search~%), 8)
+End Function
