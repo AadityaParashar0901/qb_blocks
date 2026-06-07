@@ -2,17 +2,19 @@
 ' FRACTAL BROWNIAN MOTION
 ' =========================================================
 
-Function Fractal2! (x As Single, y As Single, s As Single, o As _Unsigned _Byte, m As _Unsigned _Byte)
+Function Fractal2! (x As Single, y As Single, s As Single, o As _Unsigned _Byte, m As _Unsigned _Byte) Static
 
-    Dim As Integer i
-    Dim As Single total, amplitude, frequency, maxValue
+    Static As Integer i
+    Static As Single total, amplitude, frequency, maxValue, nx, ny
 
+    total = 0: maxValue = 0
     amplitude = 1
     frequency = 1 / s
 
+    nx = x + m * 1000: ny = y + m * 1000
     For i = 0 To o
 
-        total = total + PerlinNoise2(x * frequency + m, y * frequency + m) * amplitude
+        total = total + PerlinNoise2(nx * frequency, ny * frequency) * amplitude
 
         maxValue = maxValue + amplitude
 
@@ -25,17 +27,19 @@ Function Fractal2! (x As Single, y As Single, s As Single, o As _Unsigned _Byte,
 
 End Function
 
-Function Fractal3! (x As Single, y As Single, z As Single, s As Single, o As _Unsigned _Byte, m As _Unsigned _Byte)
+Function Fractal3! (x As Single, y As Single, z As Single, s As Single, o As _Unsigned _Byte, m As _Unsigned _Byte) Static
 
-    Dim As Integer i
-    Dim As Single total, amplitude, frequency, maxValue
+    Static As Integer i
+    Static As Single total, amplitude, frequency, maxValue, nx, ny, nz
 
+    total = 0: maxValue = 0
     amplitude = 1
     frequency = 1 / s
 
+    nx = x + m * 1000: ny = y + m * 1000: nz = z + m * 1000
     For i = 0 To o
 
-        total = total + PerlinNoise3!(x * frequency + m, y * frequency + m, z * frequency + m) * amplitude
+        total = total + PerlinNoise3!(nx * frequency, ny * frequency, nz * frequency) * amplitude
 
         maxValue = maxValue + amplitude
 
@@ -52,20 +56,20 @@ End Function
 ' PERLIN NOISE
 ' =========================================================
 
-Function PerlinNoise2! (x As Single, y As Single)
+Function PerlinNoise2! (x As Single, y As Single) Static
 
-    Dim As Integer X0, Y0
-    Dim As Integer X1, Y1
+    Static As Integer X0, Y0
+    Static As Integer X1, Y1
 
-    Dim As Single dx, dy
-    Dim As Single u, v
+    Static As Single dx, dy
+    Static As Single u, v
 
-    Dim As Integer A, B
+    Static As Integer A, B
 
-    Dim As Single g00, g10
-    Dim As Single g01, g11
+    Static As Single g00, g10
+    Static As Single g01, g11
 
-    Dim As Single ix0, ix1
+    Static As Single ix0, ix1
 
     X0 = Int(x) And 255
     Y0 = Int(y) And 255
@@ -100,23 +104,23 @@ Function PerlinNoise2! (x As Single, y As Single)
 
 End Function
 
-Function PerlinNoise3! (x As Single, y As Single, z As Single)
+Function PerlinNoise3! (x As Single, y As Single, z As Single) Static
 
-    Dim As Integer X0, Y0, Z0
-    Dim As Integer X1, Y1, Z1
+    Static As Integer X0, Y0, Z0
+    Static As Integer X1, Y1, Z1
 
-    Dim As Integer A, AA, AB
-    Dim As Integer B, BA, BB
+    Static As Integer A, AA, AB
+    Static As Integer B, BA, BB
 
-    Dim As Single dx, dy, dz
-    Dim As Single u, v, w
+    Static As Single dx, dy, dz
+    Static As Single u, v, w
 
-    Dim As Single g000, g100, g010, g110
-    Dim As Single g001, g101, g011, g111
+    Static As Single g000, g100, g010, g110
+    Static As Single g001, g101, g011, g111
 
-    Dim As Single ix00, ix10
-    Dim As Single ix01, ix11
-    Dim As Single iy0, iy1
+    Static As Single ix00, ix10
+    Static As Single ix01, ix11
+    Static As Single iy0, iy1
 
     X0 = Int(x) And 255
     Y0 = Int(y) And 255
@@ -174,7 +178,7 @@ End Function
 ' GRADIENT FUNCTION
 ' =========================================================
 
-Function Grad2! (Hash As Integer, x As Single, y As Single)
+Function Grad2! (Hash As Integer, x As Single, y As Single) Static
 
     Select Case (Hash And 7)
 
@@ -206,43 +210,15 @@ Function Grad2! (Hash As Integer, x As Single, y As Single)
 
 End Function
 
-Function Grad3! (hash As Integer, x As Single, y As Single, z As Single)
-
-    Dim As Integer h
-    Dim As Single u, v, g
-
+Function Grad3! (hash As Integer, x As Single, y As Single, z As Single) Static
+    Static As Integer h
+    Static As Single u, v, g
     h = hash And 15
-
-    If h < 8 Then
-        u = x
-    Else
-        u = y
-    End If
-
-    If h < 4 Then
-        v = y
-    ElseIf h = 12 Or h = 14 Then
-        v = x
-    Else
-        v = z
-    End If
-
-    If (h And 1) = 0 Then
-        g = u
-    Else
-        g = -u
-    End If
-
-    If (h And 2) = 0 Then
-        g = g + v
-    Else
-        g = g - v
-    End If
-
+    u = _IIf(h < 8, x, y)
+    v = _IIf(h < 4, y, _IIf(h = 12 _OrElse h = 14, x, z))
+    g = _IIf(h And 1, -u, u) + _IIf(h And 2, -v, v)
     Grad3! = g!
 End Function
-
-
 
 ' =========================================================
 ' INITIALIZE PERMUTATION TABLE
