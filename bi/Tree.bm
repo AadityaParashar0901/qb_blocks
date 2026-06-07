@@ -1,27 +1,61 @@
-Function GenerateLSystem$ (Axiom$)
+Function GenerateLSystem$ (Axiom$, TreeType As _Unsigned _Byte)
     Dim As String Current, NextStr
-    Dim As Integer J
     Dim As String * 1 C
     Current = Axiom$
     For I = 1 To Len(Current)
         Asc(C, 1) = Asc(Current, I)
-        Select Case C
-            Case "F": NextStr = NextStr + "FF"
-            Case "X": NextStr = NextStr + "[&[+FFF^^FFL][+++FFF^^FFL][-FFF^^FFL][---FFF^^FFL]]"
+        Select Case TreeType
+            '================ Oak =================
+            Case 0
+                Select Case C
+                    Case "F"
+                        NextStr = NextStr + "FF"
+                    Case "X"
+                        NextStr = NextStr + "[&R+FFFFB][&R-FFFFB][&R++FFFB][&R--FFFB]"
+                End Select
+                '================ Pine =================
+            Case 1
+                Select Case C
+                    Case "F"
+                        NextStr = NextStr + "FF"
+                    Case "X"
+                        NextStr = NextStr + "[+FFS][-FFS][++FFS][--FFS]FX"
+                End Select
+                '================ Dead =================
+            Case 2
+                Select Case C
+                    Case "F"
+                        NextStr = NextStr + "FF"
+                    Case "X"
+                        NextStr = NextStr + "[R+FFFF][R-FFFF][R++FFF][R--FFF]"
+                End Select
+                '================ Acacia =================
+            Case 3
+                Select Case C
+                    Case "F"
+                        NextStr = NextStr + "FF"
+                    Case "X"
+                        NextStr = NextStr + "&&&&[R+FFFFB][R-FFFFB][R++FFFFB][R--FFFFB]"
+                End Select
         End Select
     Next I
     GenerateLSystem$ = NextStr
 End Function
-Sub GenerateLTree (WX As Integer, WY As Integer, WZ As Integer)
+Sub GenerateLTree (WX As Integer, WY As Integer, WZ As Integer, TreeType As _Unsigned _Byte)
+    WriteLog "Generating Tree at " + _ToStr$(WX) + ", " + _ToStr$(WY) + ", " + _ToStr$(WZ)
     Dim As String S
-    S = GenerateLSystem$("FFX")
+    Select Case TreeType
+        Case 0: S = GenerateLSystem$("FFFX", TreeType) ' Oak
+        Case 1: S = GenerateLSystem$("FFFFFX", TreeType) ' Pine
+        Case 2: S = GenerateLSystem$("FFFX", 0) ' Oak
+        Case 3: S = GenerateLSystem$("FFFFX", TreeType) ' Acacia
+    End Select
     Dim As Integer SP
     Dim As TurtleState T
     T.X = WX
     T.Y = WY
     T.Z = WZ
     T.Pitch = 90
-    Dim As Integer I
     For I = 1 To Len(S)
         C$ = Mid$(S, I, 1)
         Select Case C$
@@ -37,18 +71,26 @@ Sub GenerateLTree (WX As Integer, WY As Integer, WZ As Integer)
                 T.Yaw = T.Yaw + 45
             Case "-"
                 T.Yaw = T.Yaw - 45
+            Case "&"
+                T.Pitch = T.Pitch + 30
+            Case "^"
+                T.Pitch = T.Pitch - 30
+            Case "R"
+                T.Yaw = T.Yaw + Int(Rnd * 61) - 30
+            Case "V"
+                T.Pitch = T.Pitch + Int(Rnd * 41) - 20
             Case "["
                 Stack(SP) = T
                 SP = SP + 1
             Case "]"
                 SP = SP - 1
                 T = Stack(SP)
-            Case "&"
-                T.Pitch = T.Pitch + 45
-            Case "^"
-                T.Pitch = T.Pitch - 45
-            case "L"
-                GenerateLeafBlob Int(T.X), Int(T.Y), Int(T.Z)
+            Case "S"
+                GenerateLeafBlob Int(T.X), Int(T.Y), Int(T.Z), 2
+            Case "B"
+                GenerateLeafBlob Int(T.X), Int(T.Y), Int(T.Z), 4
+            Case "L"
+                GenerateLeafBlob Int(T.X), Int(T.Y), Int(T.Z), 3
         End Select
     Next I
 End Sub
@@ -73,13 +115,11 @@ Sub DrawVoxelLine (X1, Y1, Z1, X2, Y2, Z2, Block)
         Z = Z + SZ
     Next
 End Sub
-Sub GenerateLeafBlob (X As Integer, Y As Integer, Z As Integer)
-    For LX = -2 to 2
-        For LY = -2 to 2
-            For LZ = -2 to 2
-                D = LX * LX + LY * LY + LZ * LZ
-                If D > 4 Then _Continue
-                If getBlock(X + LX, Y + LY, Z + LZ) = 0 Then setBlock X + LX, Y + LY, Z + LZ, getBlockID("oak_leaves")
+Sub GenerateLeafBlob (X As Integer, Y As Integer, Z As Integer, R As Integer)
+    For LX = -R To R
+        For LY = -R To R
+            For LZ = -R To R
+                If _Hypot(LX, _Hypot(LY, LZ)) <= R _AndAlso getBlock(X + LX, Y + LY, Z + LZ) = 0 Then setBlock X + LX, Y + LY, Z + LZ, getBlockID("oak_leaves")
             Next
         Next
     Next

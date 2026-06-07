@@ -40,8 +40,8 @@ End Type
 Dim Shared As GameSettings GameSettings
 
 Const GameVersion = 6.3
-Const MaxRenderDistance = 9
-Const MaxJobs = 4
+Const MaxRenderDistance = 17
+Const MaxJobs = 16
 GameSettings.Fov = 90
 GameSettings.Fog = 0
 GameSettings.Clouds = 1
@@ -63,6 +63,16 @@ Const MaxChunks = (2 * MaxRenderDistance - 1) ^ 2
 FileLog "Max Chunks: " + _ToStr$(MaxChunks)
 Const ChunkDataSize = 65536
 
+'======== Splines ========
+Type Spline
+    As _Unsigned _Byte Y(0 to 255)
+    As Long Image
+End Type
+Dim Shared As Spline ContinentalSpline, TerrainSpline, DetailSpline
+CreateSpline ContinentalSpline, "0,31,31,31,191,191,255,191"
+CreateSpline TerrainSpline, "0,191,63,31,191,127,255,191"
+CreateSpline DetailSpline, "0,0,63,31,191,63,255,191"
+
 '================ App State ================
 
 Type AppState
@@ -81,8 +91,9 @@ Const AppState_Quit = 255
 
 Const Command_Generating_Textures = 1
 Const Command_ChunkQueue = 2
-Const Command_Continue = 3
-Const Command_Quit = 4
+Const Command_ClearAllChunks = 3
+Const Command_Continue = 4
+Const Command_Quit = 5
 
 Dim Shared As AppState AppState
 Dim Shared As Long KeyHit
@@ -131,7 +142,8 @@ Type glVerticesCount
 End Type
 Dim Shared As glVerticesCount glVerticesCount(1 To MaxChunks)
 
-Dim Shared As Chunk Chunks(0, 0), PendingChunks(0, 0)
+Dim Shared As Chunk Chunks(0, 0)
+Dim Shared As PendingChunk PendingChunks(0, 0)
 _Echo "Size of One Chunk: " + _ToStr$(Len(Chunks(0, 0)))
 Dim Shared As Vec3_Long ChunksStart, ChunksEnd
 Dim Shared As _Unsigned Long Worker_Jobs_CX(1 To MaxJobs), Worker_Jobs_CZ(1 To MaxJobs)
@@ -145,7 +157,8 @@ Const ChunkState_Blocks = 3
 Const ChunkState_Ready = 4
 Const ChunkState_Buffer = 5
 
-Dim Shared As String * 1280 ChunkGraph
+Const ChunkGraphSize = ChunkState_Buffer * 256
+Dim Shared As String * ChunkGraphSize ChunkGraph
 
 Type TurtleState
     As Single X, Y, Z
@@ -316,16 +329,15 @@ Do
             RefreshChunks
             AppState.Command = 0
 
+        Case Command_ClearAllChunks
+            ClearAllChunks
+            AppState.Command = 0
+
         Case Command_Quit
             WriteSettings
             Exit Do
 
     End Select
-
-    If _Exit Then
-        AppState.CurrentState = AppState_Quit
-        AppState.Command = Command_Quit
-    End If
 
     LFPSCount = LFPSCount + 1
 Loop
@@ -344,9 +356,9 @@ Sub SimulateEntity (Entity As Entity, Speed!)
     Entity.Position.X = Entity.Position.X + Entity.Velocity.X * Speed!
     Entity.Position.Y = Entity.Position.Y + Entity.Velocity.Y * Speed!
     Entity.Position.Z = Entity.Position.Z + Entity.Velocity.Z * Speed!
-    Entity.Velocity.X = _IIf(Abs(Entity.Velocity.X) > 0.1, Entity.Velocity.X * 0.95, 0)
+    Entity.Velocity.X = _IIf(Abs(Entity.Velocity.X) > 0.1, Entity.Velocity.X * 0.9, 0)
     Entity.Velocity.Y = _IIf(Abs(Entity.Velocity.Y) > 0.1, Entity.Velocity.Y * 0.9, 0)
-    Entity.Velocity.Z = _IIf(Abs(Entity.Velocity.Z) > 0.1, Entity.Velocity.Z * 0.95, 0)
+    Entity.Velocity.Z = _IIf(Abs(Entity.Velocity.Z) > 0.1, Entity.Velocity.Z * 0.9, 0)
 End Sub
 Sub MoveEntity (Entity As Entity, Angle!, Speed!)
     Entity.Velocity.X = Entity.Velocity.X + Cos(_D2R(Angle!)) * Speed!
@@ -371,6 +383,7 @@ Sub _GL Static
     Static As Long TextureAtlasHandle
     Static As _Unsigned _Byte DebugMenu, NewFov, Zoom
     Static As LongBuffer TransparentChunks
+    Static As _Unsigned Long ChunksLoaded, QuadsLoaded
 
     KeyHit = _KeyHit
     Select Case AppState.CurrentState
@@ -400,6 +413,7 @@ Sub _GL Static
             Select Case KeyHit
                 Case 27: AppState.CurrentState = AppState_Game_Pause
                 Case 15616: DebugMenu = Not DebugMenu
+                Case 82, 114: AppState.Command = Command_ClearAllChunks
             End Select
 
             GameState.oldPlayerChunk = GameState.PlayerChunk
@@ -442,6 +456,7 @@ Sub _GL Static
         Case AppState_Page_Menu
         Case AppState_Page_Settings
         Case AppState_Game_Loading
+            ' Load saved chunks here
             AppState.Command = Command_Continue
 
         Case AppState_Game_Play, AppState_Game_Pause
@@ -516,12 +531,11 @@ Sub _GL Static
             If DebugMenu Then
                 _PrintString (0, 32), "Chunks: (" + _ToStr$(ChunksStart.X) + " ~ " + _ToStr$(ChunksEnd.X) + ", " + _ToStr$(ChunksStart.Z) + " ~ " + _ToStr$(ChunksEnd.Z) + "), Loaded=" + _ToStr$(ChunksLoaded) + ", Queue=" + _ToStr$(ChunkQueue_X.Size)
                 _PrintString (0, 48), "Quads: " + _ToStr$(QuadsLoaded)
-                PrintDebug 0, 64, "Terrain=" + _ToStr$(GetTerrainNoise(Player.Position.X, Player.Position.Z))
-                PrintDebug 0, 76, "Detail=" + _ToStr$(GetDetailNoise(Player.Position.X, Player.Position.Z))
-                PrintDebug 0, 88, "Continentalness=" + _ToStr$(GetContinentalNoise(Player.Position.X, Player.Position.Z))
-                PrintDebug 0, 100, "Rivers=" + _ToStr$(GetRiverNoise(Player.Position.X, Player.Position.Z))
-                PrintDebug 0, 112, "Temperature=" + _ToStr$(GetTemperatureNoise(Player.Position.X, Player.Position.Z))
-                PrintDebug 0, 124, "Humidity=" + _ToStr$(GetHumidityNoise(Player.Position.X, Player.Position.Z))
+                PrintDebug 0, 64, "Continentalness=" + _ToStr$(GetContinentalNoise(Player.Position.X, Player.Position.Z))
+                PrintDebug 0, 76, "Terrain=" + _ToStr$(GetTerrainNoise(Player.Position.X, Player.Position.Z))
+                PrintDebug 0, 88, "Detail=" + _ToStr$(GetDetailNoise(Player.Position.X, Player.Position.Z))
+                PrintDebug 0, 100, "Temperature=" + _ToStr$(GetTemperatureNoise(Player.Position.X, Player.Position.Z))
+                PrintDebug 0, 112, "Humidity=" + _ToStr$(GetHumidityNoise(Player.Position.X, Player.Position.Z))
 
                 For I = 1 To 256 ' Chunk Graph
                     T$ = Mid$(ChunkGraph, (I - 1) * ChunkState_Buffer + 1, ChunkState_Buffer)
@@ -531,12 +545,17 @@ Sub _GL Static
                         K = K - Asc(T$, J)
                     Next J
                 Next I
+
+                Line (_Width - 514, _Height - 258)-(_Width - 1, _Height - 1), _RGB32(0), B
+                _PutImage (_Width - 513, _Height - 257), ContinentalSpline.Image
+                _PutImage (_Width - 257, _Height - 257), TerrainSpline.Image
             End If
 
             _Display
 
         Case AppState_Game_Stop
         Case AppState_Quit
+            gl_DrawLoadingMenuText "Exiting"
             _glDeleteTextures 1, _Offset(TextureAtlasHandle)
             AppState.Command = Command_Quit
 
@@ -547,6 +566,12 @@ Sub _GL Static
             gl_generateTexture TextureAtlasHandle, TextureAtlas
             AppState.Command = 0
     End Select
+
+    If _Exit Then
+        AppState.CurrentState = AppState_Quit
+        AppState.Command = Command_Quit
+    End If
+
     GFPSCount = GFPSCount + 1
 End Sub
 
@@ -581,20 +606,23 @@ Sub Work Static
                 Chunk.LevelOfDetail = 0
 
                 Chunk.MinimumHeight = 255
-                Chunk.MaximumHeight = 0
+                Chunk.MaximumHeight = WaterLevel
 
                 lodStep = _ShL(1, Chunk.LevelOfDetail)
                 For X = 0 To 15 Step lodStep: For Z = 0 To 15 Step lodStep
                         TX = PX + X: TZ = PZ + Z
-                        Chunk.Height(X, Z) = _Clamp(0, (GetContinentalNoise(TX, TZ) * GetTerrainNoise(TX, TZ) + GetDetailNoise(TX, TZ) - 0.05 * GetRiverNoise(TX, TZ)) * 32 + 48, 255)
+                        Chunk.Height(X, Z) = _Clamp(0, _ShR(ApplySpline(ContinentalSpline, GetContinentalNoise(TX, TZ)) + 3 * ApplySpline(TerrainSpline, GetTerrainNoise(TX, TZ)) + 4 * ApplySpline(DetailSpline, GetDetailNoise(TX, TZ)), 3), 255)
                         Chunk.Temperature(X, Z) = _Clamp(0, GetTemperatureNoise(TX, TZ) * 256, 255)
                         Chunk.Humidity(X, Z) = _Clamp(0, GetHumidityNoise(TX, TZ) * 256, 255)
-                        Chunk.Features(X, Z) = _IIf(Fractal2(TX, TZ, 16, 1, 8) > 0.5 And Fractal2(TX, TZ, 16, 2, 9) > 0.5, 1, 0)
+                        Chunk.Features(X, Z) = _IIf(Chunk.Height(X, Z) > WaterLevel, GetFeatureNoise(TX, TZ), 0)
                 Next Z, X
                 Chunk.State = ChunkState_HeightMap
 
             Case ChunkState_HeightMap
                 lodStep = _ShL(1, Chunk.LevelOfDetail)
+                ChunkId = getChunkId(CX, CZ)
+                glVerticesCount(ChunkId).Opaque.Count = 0
+                glVerticesCount(ChunkId).Transparent.Count = 0
                 For X = 0 To 15 Step lodStep: For Z = 0 To 15 Step lodStep
                         Height = Chunk.Height(X, Z)
                         dHeight = Height - Int(Height)
@@ -624,15 +652,19 @@ Sub Work Static
 
             Case ChunkState_Tree
                 For X = 0 To 15: For Z = 0 To 15
-                        If Chunk.Features(X, Z) Then GenerateLTree X, Chunk.Height(X, Z), Z
+                        If Chunk.Features(X, Z) Then GenerateLTree PX + X, Chunk.Height(X, Z), PZ + Z, Chunk.Features(X, Z)
                 Next Z, X
                 Chunk.State = ChunkState_Blocks
 
             Case ChunkState_Blocks
                 For X = 0 To 15: For Z = 0 To 15: For Y = 0 To 255
                             P = PendingChunks(CX, CZ).Blocks(X, Y, Z)
+                            If P > TotalBlocks Then
+                                WriteLog "Error: Invalid Pending Block " + _ToStr$(P)
+                                _Continue
+                            End If
                             Chunk.Blocks(X, Y, Z) = _IIf(P, P, Chunk.Blocks(X, Y, Z))
-                            Chunk.Layers(Y) = Chunk.Layers(Y) Or _IIf(P, 1, 0)
+                            Chunk.Layers(Y) = Chunk.Layers(Y) Or _IIf(P, _IIf(isTransparent(P), 2, 1), 0)
                             Chunk.MinimumHeight = _Min(Chunk.MinimumHeight, _IIf(P, Y, 255))
                             Chunk.MaximumHeight = _Max(Chunk.MaximumHeight, _IIf(P, Y, 0))
                 Next Y, Z, X
@@ -643,6 +675,9 @@ Sub Work Static
                 LongBuffer_Clear TransparentQueue
 
                 lodStep = _ShL(1, Chunk.LevelOfDetail)
+                X0 = lodStep - 1: X1 = 16 - lodStep
+                Y0 = 1: Y1 = 254
+                Z0 = lodStep - 1: Z1 = 16 - lodStep
 
                 TextureHeight = TextureSize / TextureAtlasHeight
                 ChunkId = getChunkId(CX, CZ)
@@ -652,6 +687,7 @@ Sub Work Static
 
                     For X = 0 To 15 Step lodStep: For Z = 0 To 15 Step lodStep
                             Block = Chunk.Blocks(X, Y, Z)
+                            BlockIsInsideChunk = (X0 < X And X < X1) _AndAlso (Y0 < Y And Y < Y1) _AndAlso (Z0 < Z And Z < Z1)
                             If Block = 0 Then
                                 _Continue
                             ElseIf Block > TotalBlocks Then
@@ -659,12 +695,12 @@ Sub Work Static
                                 _Continue
                             End If
 
-                            tmpBlocks(0) = getBlock(PX + X + lodStep, Y, PZ + Z)
-                            tmpBlocks(1) = getBlock(PX + X - lodStep, Y, PZ + Z)
-                            tmpBlocks(2) = getBlock(PX + X, Y + 1, PZ + Z)
-                            tmpBlocks(3) = getBlock(PX + X, Y - 1, PZ + Z)
-                            tmpBlocks(4) = getBlock(PX + X, Y, PZ + Z + lodStep)
-                            tmpBlocks(5) = getBlock(PX + X, Y, PZ + Z - lodStep)
+                            tmpBlocks(0) = _IIf(BlockIsInsideChunk, Chunk.Blocks(X + lodStep, Y, Z), getBlock(PX + X + lodStep, Y, PZ + Z))
+                            tmpBlocks(1) = _IIf(BlockIsInsideChunk, Chunk.Blocks(X - lodStep, Y, Z), getBlock(PX + X - lodStep, Y, PZ + Z))
+                            tmpBlocks(2) = _IIf(BlockIsInsideChunk, Chunk.Blocks(X, Y + 1, Z), getBlock(PX + X, Y + 1, PZ + Z))
+                            tmpBlocks(3) = _IIf(BlockIsInsideChunk, Chunk.Blocks(X, Y - 1, Z), getBlock(PX + X, Y - 1, PZ + Z))
+                            tmpBlocks(4) = _IIf(BlockIsInsideChunk, Chunk.Blocks(X, Y, Z + lodStep), getBlock(PX + X, Y, PZ + Z + lodStep))
+                            tmpBlocks(5) = _IIf(BlockIsInsideChunk, Chunk.Blocks(X, Y, Z - lodStep), getBlock(PX + X, Y, PZ + Z - lodStep))
 
                             omitBlockFace = omitBlockFace(Block)
 
@@ -684,7 +720,6 @@ Sub Work Static
                 Next Z, X, Y
 
                 VertexId = 0
-                glVerticesCount(ChunkId).Opaque.Count = 0
                 glVerticesCount(ChunkId).Opaque.Vertices = _Offset(glVertices(0, ChunkId)): glVerticesCount(ChunkId).Opaque.TextureCoords = _Offset(glTextureCoords(0, ChunkId)): glVerticesCount(ChunkId).Opaque.Colors = _Offset(glColors(0, ChunkId))
                 While OpaqueQueue.Size
                     XYZ = LongBuffer_Pop(OpaqueQueue)
@@ -716,7 +751,6 @@ Sub Work Static
                 Wend
                 glVerticesCount(ChunkId).Opaque.Count = VertexId
 
-                glVerticesCount(ChunkId).Transparent.Count = 0
                 glVerticesCount(ChunkId).Transparent.Vertices = _Offset(glVertices(VertexId, ChunkId)): glVerticesCount(ChunkId).Transparent.TextureCoords = _Offset(glTextureCoords(VertexId, ChunkId)): glVerticesCount(ChunkId).Transparent.Colors = _Offset(glColors(VertexId, ChunkId))
                 While TransparentQueue.Size
                     XYZ = LongBuffer_Pop(TransparentQueue)
@@ -765,10 +799,10 @@ Sub Work Static
     Worker_Jobs = 0
 End Sub
 Function GetContinentalNoise (X As Long, Z As Long) Static
-    GetContinentalNoise = Fractal2(X, Z, 4096, 0, 0) * 0.5 + 0.5
+    GetContinentalNoise = Fractal2(X, Z, 1024, 0, 0) * 0.5 + 0.5
 End Function
 Function GetTerrainNoise (X As Long, Z As Long) Static
-    GetTerrainNoise = Fractal2(X, Z, 1024, 2, 1) * 0.5 + 0.5
+    GetTerrainNoise = Fractal2(X, Z, 256, 0, 1) * 0.5 + 0.5
 End Function
 Function GetDetailNoise (X As Long, Z As Long) Static
     GetDetailNoise = Fractal2(X, Z, 256, 3, 2) * 0.5 + 0.5
@@ -779,11 +813,8 @@ End Function
 Function GetHumidityNoise (X As Long, Z As Long) Static
     GetHumidityNoise = Fractal2(X, Z, 1024, 0, 4) * 0.5 + 0.5
 End Function
-Function GetErosionNoise (X As Long, Z As Long) Static
-    GetErosionNoise = Fractal2(X, Z, 1024, 0, 5) * 0.5 + 0.5
-End Function
-Function GetRiverNoise (X As Long, Z As Long) Static
-    GetRiverNoise = Abs(Fractal2(X, Z, 64, 0, 6))
+Function GetFeatureNoise (X As Long, Z As Long) Static
+    GetFeatureNoise = _IIf(InRange(0.1, Fractal2(X, Z, 4, 2, 8), 0.15) _AndAlso InRange(-0.5, Fractal2(X, Z, 8, 2, 9), -0.45), _Clamp(0, Fractal2(TX, TZ, 256, 0, 5) * 2 + 2, 3), 0)
 End Function
 
 '$Include:'bi/Tree.bm'
@@ -829,6 +860,35 @@ Sub setBlock (X As Long, Y As Long, Z As Long, Block As _Unsigned _Byte) Static
         WriteLog "Warning: setBlock trying To access unaccessible area: (" + _ToStr$(CX) + ", " + _ToStr$(CZ) + ")"
     End If
 End Sub
+
+'======== Splines ========
+Sub CreateSpline (S As Spline, L As String) Static
+    Static As _Unsigned _Byte X0, Y0, X1, Y1
+    Static As Single m, c
+    Static As _Unsigned _Byte t
+    Static As _Unsigned Long I, X
+    L = ListStringFromString(L)
+    If S.Image < -1 Then _FreeImage S.Image
+    S.Image = _NewImage(256, 256, 32)
+    _Dest S.Image
+    For I = 1 To ListStringLength(L) - 2 Step 2
+        X0 = Val(ListStringGet(L, I))
+        Y0 = Val(ListStringGet(L, I + 1))
+        X1 = Val(ListStringGet(L, I + 2))
+        Y1 = Val(ListStringGet(L, I + 3))
+        m = (Y1 - Y0) / (X1 - X0)
+        c = Y0 - m * X0
+        t = _ShR(I, 2)
+        For X = X0 To X1
+            S.Y(X) = m * X + c
+            Line (X, 255 - S.Y(X))-(X, 255), _RGB32(_IIf(t And 4, 255, 0), _IIf(t And 2, 255, 0), _IIf(t And 1, 255, 0))
+        Next X
+    Next I
+    _Dest 0
+End Sub
+Function ApplySpline! (S As Spline, V As Single)
+    ApplySpline! = S.Y(_Clamp(0, V * 256, 255))
+End Function
 
 '================ Subroutines & Functions ================
 

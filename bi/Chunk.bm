@@ -9,3 +9,10 @@ End Sub
 Sub Build_ChunkQueue (Command As _Unsigned _Byte) Static
     AddChunkToQueue GameState.PlayerChunk.X, GameState.PlayerChunk.Z
 End Sub
+Sub ClearAllChunks Static
+    ReDim Chunks(ChunksStart.X To ChunksEnd.X, ChunksStart.Z To ChunksEnd.Z) As Chunk
+    ReDim PendingChunks(ChunksStart.X To ChunksEnd.X, ChunksStart.Z To ChunksEnd.Z) As PendingChunk
+    LongBuffer_Clear ChunkQueue_X
+    LongBuffer_Clear ChunkQueue_Z
+    AddChunkToQueue GameState.PlayerChunk.X, GameState.PlayerChunk.Z
+End Sub
