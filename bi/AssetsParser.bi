@@ -2,12 +2,18 @@ Type TextureData
     As String Name
     As Long Handle
     As _Unsigned _Byte AnimationFrames
-    As _Unsigned Integer Y
+    As Single X, Y
 End Type
 Type BlockData
-    As String Name
+    As String Name, ModelName
     As _Unsigned _Byte Faces(0 To 5)
-    As _Unsigned _Byte Transparent
+    As _Unsigned _Byte Transparent, ModelId
+End Type
+Type Model
+    As String Name
+    As Vec3_Float Vertices(0 To 255)
+    As Vec2_Float TextureCoords(0 To 255)
+    As _Unsigned _Byte Count
 End Type
 
 Dim Shared As Long TextureAtlas
@@ -37,6 +43,8 @@ For I = 1 To ListStringLength(FileContents$)
                     isTransparent(0) = 1
                     omitBlockFace(0) = 63
                     CurrentBlockID = 0: BlockMode = 0
+                Case "models": CurrentMode = 3: I = I + 1
+                    ReDim Shared CustomModels(0) As Model
                 Case ";"
             End Select
         Case 1
@@ -45,17 +53,15 @@ For I = 1 To ListStringLength(FileContents$)
                 Case "}": If TextureMode = 0 Then CurrentMode = 0
                 Case ","
                 Case "animate": I = I + 2: Textures(CurrentTextureID).AnimationFrames = Val(ListStringGet(FileContents$, I)) ' not being used currently
-                    Y~% = Y~% + Textures(CurrentTextureID).AnimationFrames - 1
                 Case Else: FileLog "Loading Texture(" + ByteToHex$(CurrentTextureID) + "): " + CurrentListElement$
                     If TextureMode Then _Continue
                     CurrentTextureID = CurrentTextureID + 1: TextureMode = 1
                     ReDim _Preserve Shared Textures(1 To CurrentTextureID) As TextureData
                     Textures(CurrentTextureID).Handle = LoadAsset(CurrentListElement$)
-                    Textures(CurrentTextureID).Y = Y~%
-                    Y~% = Y~% + 1
                     Textures(CurrentTextureID).Name = CurrentListElement$
                     TextureMode = 1
             End Select
+
         Case 2
             Select Case CurrentListElement$
                 Case ";": BlockMode = 0
@@ -93,11 +99,58 @@ For I = 1 To ListStringLength(FileContents$)
                             omitBlockFace(CurrentBlockID) = 63
                     End Select
                     FileLog "Omit Block Face: " + _ToStr$(omitBlockFace(CurrentBlockID))
+                Case "model": I = I + 2
+                    Blocks(CurrentBlockID).ModelName = RemoveDoubleQuotes$(ListStringGet(FileContents$, I))
+                    For J = 1 To UBound(CustomModels)
+                        If Blocks(CurrentBlockID).ModelName <> CustomModels(J).Name Then _Continue
+                        Blocks(CurrentBlockID).ModelId = J
+                        Exit For
+                    Next J
+                    If Blocks(CurrentBlockID).ModelId = 0 Then WriteLog "Error: Model '" + Blocks(CurrentBlockID).ModelName + "' not found!"
+            End Select
+
+        Case 3
+            Select Case CurrentListElement$
+                Case ";": ModelMode = 0
+                Case "name": I = I + 2
+                    CurrentModelID = CurrentModelID + _IIf(ModelMode, 0, 1)
+                    CustomModelVertexId = _IIf(ModelMode, CustomModelVertexId, 0)
+                    ReDim _Preserve Shared CustomModels(1 To CurrentModelID) As Model
+                    CustomModels(CurrentModelID).Name = RemoveDoubleQuotes$(ListStringGet(FileContents$, I))
+                    ModelMode = 1
+                    FileLog "Model: " + CustomModels(CurrentModelID).Name
+                Case "vertices": I = I + 2
+                    CustomModels(CurrentModelID).Count = Val(RemoveDoubleQuotes$(ListStringGet(FileContents$, I)))
+                    ModelMode = 2
+                    FileLog "    Vertices: " + _ToStr$(CustomModels(CurrentModelID).Count)
+                Case "data": I = I + 2
+                    Do
+                        Select Case ListStringGet(FileContents$, I)
+                            Case "[": ModelVertexMode = 0
+                            Case "]": FileLog "    Vertex[" + _ToStr$(CustomModelVertexId) + "]: " + _ToStr$(CustomModels(CurrentModelID).Vertices(CustomModelVertexId).X) + ", " + _ToStr$(CustomModels(CurrentModelID).Vertices(CustomModelVertexId).Y) + ", " + _ToStr$(CustomModels(CurrentModelID).Vertices(CustomModelVertexId).Z) + ", " + _ToStr$(CustomModels(CurrentModelID).TextureCoords(CustomModelVertexId).X) + ", " + _ToStr$(CustomModels(CurrentModelID).TextureCoords(CustomModelVertexId).Y)
+                                CustomModelVertexId = CustomModelVertexId + 1
+                            Case "{"
+                            Case "}": Exit Do
+                            Case ","
+                            Case Else: ModelVertexMode = ModelVertexMode + 1
+                                V = Val(ListStringGet(FileContents$, I))
+                                Select Case ModelVertexMode
+                                    Case 1: CustomModels(CurrentModelID).Vertices(CustomModelVertexId).X = V
+                                    Case 2: CustomModels(CurrentModelID).Vertices(CustomModelVertexId).Y = V
+                                    Case 3: CustomModels(CurrentModelID).Vertices(CustomModelVertexId).Z = V
+                                    Case 4: CustomModels(CurrentModelID).TextureCoords(CustomModelVertexId).X = V
+                                    Case 5: CustomModels(CurrentModelID).TextureCoords(CustomModelVertexId).Y = V
+                                End Select
+                        End Select
+                        I = I + 1
+                    Loop
+                Case "}": CurrentMode = 0
+                Case ","
             End Select
     End Select
 Next I
-TotalTextures = UBound(Textures): WriteLog "Total Textures: " + _ToStr$(TotalTextures)
-TotalBlocks = UBound(Blocks): WriteLog "Total Blocks: " + _ToStr$(TotalBlocks)
+TotalTextures = UBound(Textures): FileLog "Total Textures: " + _ToStr$(TotalTextures)
+TotalBlocks = UBound(Blocks): FileLog "Total Blocks: " + _ToStr$(TotalBlocks)
 '======== Build Hash Table ========
 For I = 1 To TotalBlocks
     Hash~%% = getHash~%%(Blocks(I).Name)
@@ -112,10 +165,21 @@ For I = 0 To 255
     FileLog "Block Hash Table (" + ByteToHex$(I) + "): " + ListStringPrint(BlockHashTable_List(I))
 Next I
 '======== Create Texture Atlas ========
-Dim Shared TextureAtlasHeight As _Unsigned Long
-TextureAtlasHeight = TextureSize * Textures(TotalTextures).Y + _Height(Textures(TotalTextures).Handle)
-TextureAtlas = _NewImage(TextureSize, TextureAtlasHeight, 32)
+Dim Shared TextureAtlasSize As _Unsigned Long
+TextureAtlasSize = _Ceil(Sqr(TotalTextures))
+X = 0: Y = 0
+TextureAtlas = _NewImage(TextureAtlasSize * TextureSize, TextureAtlasSize * TextureSize, 32)
 For I = 1 To TotalTextures
-    _PutImage (0, TextureSize * Textures(I).Y)-(TextureSize - 1, TextureSize * (Textures(I).Y + 1) - 1), Textures(I).Handle, TextureAtlas
-    _FreeImage Textures(I).Handle
+    _PutImage (X * TextureSize, Y * TextureSize)-((X + 1) * TextureSize - 1, (Y + 1) * TextureSize - 1), Textures(I).Handle, TextureAtlas, (0, 0)-(TextureSize - 1, TextureSize - 1)
+    If Textures(I).AnimationFrames = 0 Then _FreeImage Textures(I).Handle
+    Textures(I).X = X / TextureAtlasSize
+    Textures(I).Y = Y / TextureAtlasSize
+
+    X = X + 1
+    If X >= TextureAtlasSize Then
+        X = 0
+        Y = Y + 1
+    End If
 Next I
+Dim Shared As Single CalculatedTextureSize
+CalculatedTextureSize = (TextureSize - 1) / TextureAtlasSize / TextureSize

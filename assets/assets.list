@@ -24,23 +24,41 @@ textures {
 	mossy_cobblestone;
 	deepslate;
 	water_still;
+	pink_tulip;
 }
+
+models {
+	name = "flower",
+	     vertices = 8,
+	     data = {
+		     [ 0, 0, 0, 0, 1 ],
+		     [ 1, 0, 1, 1, 1 ],
+		     [ 1, 1, 1, 1, 0 ],
+		     [ 0, 1, 0, 0, 0 ],
+		     [ 1, 0, 0, 1, 1 ],
+		     [ 0, 0, 1, 0, 1 ],
+		     [ 0, 1, 1, 0, 0 ],
+		     [ 1, 1, 0, 1, 0 ]
+	     };
+}
+
 blocks {
 	name = "grass", textures = [2, 2, 1, 3, 2, 2];
 	name = "dirt", textures = 3;
 	name = "stone", textures = 4;
 	name = "oak_log", textures = [5, 5, 6, 6, 5, 5];
-	name = "oak_leaves", textures = 7, flora, transparent;
+	name = "oak_leaves", textures = 7, flora, transparent, omit;
 	name = "oak_planks", textures = 8;
 	name = "snow", textures = [10, 10, 9, 3, 10, 10];
 	name = "sand", textures = 11;
 	name = "spruce_log", textures = [12, 12, 13, 13, 12, 12];
-	name = "spruce_leaves", textures = 14, flora, transparent;
+	name = "spruce_leaves", textures = 14, flora, transparent, omit;
 	name = "spruce_planks", textures = 15;
 	name = "stone_bricks", textures = 16;
 	name = "sandstone", textures = [17, 17, 19, 18, 17, 17];
 	name = "cobblestone", textures = 20;
 	name = "mossy_cobblestone", textures = 21;
 	name = "deepslate", textures = 22;
-	name = "water", textures = 23, transparent, omit;
+	name = "water", textures = [0, 0, 23, 0, 0, 0], transparent, omit;
+	name = "pink_tulip", textures = 24, transparent, model = "flower";
 }

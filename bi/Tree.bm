@@ -42,7 +42,6 @@ Function GenerateLSystem$ (Axiom$, TreeType As _Unsigned _Byte)
     GenerateLSystem$ = NextStr
 End Function
 Sub GenerateLTree (WX As Integer, WY As Integer, WZ As Integer, TreeType As _Unsigned _Byte)
-    WriteLog "Generating Tree at " + _ToStr$(WX) + ", " + _ToStr$(WY) + ", " + _ToStr$(WZ)
     Dim As String S
     Select Case TreeType
         Case 0: S = GenerateLSystem$("FFFX", TreeType) ' Oak

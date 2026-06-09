@@ -5,9 +5,8 @@ $Resize:On
 _Console On
 
 '================ Log File ================
-Open "log.txt" For Output Lock Write As #100
+Open "log.txt" For Output As #100
 
-If _DirExists("settings") = 0 Then MkDir "settings"
 If _DirExists("saves") = 0 Then MkDir "saves"
 
 '================ Font ================
@@ -40,8 +39,8 @@ End Type
 Dim Shared As GameSettings GameSettings
 
 Const GameVersion = 6.3
-Const MaxRenderDistance = 17
-Const MaxJobs = 16
+Const MaxRenderDistance = 5
+Const MaxJobs = 4
 GameSettings.Fov = 90
 GameSettings.Fog = 0
 GameSettings.Clouds = 1
@@ -49,14 +48,14 @@ GameSettings.Fps = 60
 GameSettings.RenderDistance = MaxRenderDistance - 1
 GameSettings.MouseSensitivity = 0.1
 
-If _FileExists("settings/gamesettings.dat") Then ReadSettings
+If _FileExists("saves/gamesettings.dat") Then ReadSettings
 GameSettings.RenderDistance = _Clamp(0, GameSettings.RenderDistance, MaxRenderDistance - 1)
 
 '================ World Generation ================
 
 Const WaterLevel = 64
 Const WorldNoiseSmoothness = 256
-Const CloudsHeight = 384
+Const CloudsHeight = 192
 
 '======== Calculations ========
 Const MaxChunks = (2 * MaxRenderDistance - 1) ^ 2
@@ -144,7 +143,6 @@ Dim Shared As glVerticesCount glVerticesCount(1 To MaxChunks)
 
 Dim Shared As Chunk Chunks(0, 0)
 Dim Shared As PendingChunk PendingChunks(0, 0)
-_Echo "Size of One Chunk: " + _ToStr$(Len(Chunks(0, 0)))
 Dim Shared As Vec3_Long ChunksStart, ChunksEnd
 Dim Shared As _Unsigned Long Worker_Jobs_CX(1 To MaxJobs), Worker_Jobs_CZ(1 To MaxJobs)
 Dim Shared As _Unsigned Long Worker_Jobs
@@ -152,7 +150,7 @@ Dim Shared As LongBuffer ChunkQueue_X, ChunkQueue_Z
 
 Const ChunkState_Empty = 0
 Const ChunkState_HeightMap = 1
-Const ChunkState_Tree = 2
+Const ChunkState_Features = 2
 Const ChunkState_Blocks = 3
 Const ChunkState_Ready = 4
 Const ChunkState_Buffer = 5
@@ -205,6 +203,7 @@ Color _RGB32(255), _RGB32(0, 127)
 
 AppState.CurrentState = AppState_Loading_Assets
 '$Include:'bi/AssetsParser.bi'
+'_SaveImage "TextureAtlas.png", TextureAtlas
 
 '======== Generate Texture Atlas ========
 AppState.Command = Command_Generating_Textures
@@ -272,6 +271,7 @@ Do
         Case AppState_Page_Menu
             Randomize Timer
             Seed = _RGBA32(Rnd * 256, Rnd * 256, Rnd * 256, Rnd * 256)
+            WriteLog "Seed: " + Hex$(Seed)
             InitPerlin Seed
             Build_ChunkQueue 0
             ' Read World
@@ -381,7 +381,7 @@ End Sub
 
 Sub _GL Static
     Static As Long TextureAtlasHandle
-    Static As _Unsigned _Byte DebugMenu, NewFov, Zoom
+    Static As _Unsigned _Byte DebugMenu, NewFov, Zoom, Command_Freeze
     Static As LongBuffer TransparentChunks
     Static As _Unsigned Long ChunksLoaded, QuadsLoaded
 
@@ -414,6 +414,7 @@ Sub _GL Static
                 Case 27: AppState.CurrentState = AppState_Game_Pause
                 Case 15616: DebugMenu = Not DebugMenu
                 Case 82, 114: AppState.Command = Command_ClearAllChunks
+                Case 92: Command_Freeze = Not Command_Freeze
             End Select
 
             GameState.oldPlayerChunk = GameState.PlayerChunk
@@ -423,7 +424,7 @@ Sub _GL Static
             GameState.PlayerInChunk.X = Int(Player.Position.X) And 15
             GameState.PlayerInChunk.Y = Int(Player.Position.Y) And 255
             GameState.PlayerInChunk.Z = Int(Player.Position.Z) And 15
-            If GameState.oldPlayerChunk.X <> GameState.PlayerChunk.X Or GameState.oldPlayerChunk.Z <> GameState.PlayerChunk.Z Then AppState.Command = Command_ChunkQueue
+            If GameState.oldPlayerChunk.X <> GameState.PlayerChunk.X Or GameState.oldPlayerChunk.Z <> GameState.PlayerChunk.Z Then AppState.Command = _IIf(Command_Freeze, 0, Command_ChunkQueue)
 
             _MouseHide
             While _MouseInput
@@ -468,18 +469,15 @@ Sub _GL Static
             _glRotatef Player.Angle.Y, 1, 0, 0
             _glRotatef Player.Angle.X, 0, 1, 0
             _glPushMatrix
-
             _glTranslatef -Camera.Position.X, -Camera.Position.Y, -Camera.Position.Z
             _glMatrixMode _GL_PROJECTION
             _glLoadIdentity
             NewFov = NewFov + (GameSettings.Fov - Zoom * (GameSettings.Fov - 30) - NewFov) / 4
-            _gluPerspective NewFov, ScreenWidth / ScreenHeight, 0.1, 1024
+            _gluPerspective NewFov, ScreenWidth / ScreenHeight, 0.1, 384
             _glMatrixMode _GL_MODELVIEW
 
             _glEnable _GL_CULL_FACE
             _glCullFace _GL_BACK
-
-            If Camera.Position.Y < CloudsHeight Then DrawClouds
 
             _glEnable _GL_TEXTURE_2D
             _glBindTexture _GL_TEXTURE_2D, TextureAtlasHandle
@@ -499,6 +497,10 @@ Sub _GL Static
                 If glVerticesCount(ChunkId).Transparent.Count = 0 Then _Continue
                 LongBuffer_Push TransparentChunks, ChunkId
             Next ChunkId
+
+            _glDisable _GL_CULL_FACE
+            _glEnable _GL_ALPHA_TEST
+            _glAlphaFunc _GL_GREATER, 0.1
             While TransparentChunks.Size
                 ChunkId = LongBuffer_Pop(TransparentChunks)
                 _glVertexPointer 3, _GL_SHORT, 0, glVerticesCount(ChunkId).Transparent.Vertices
@@ -509,14 +511,15 @@ Sub _GL Static
             Wend
             ChunksLoaded = tmpChunks
             QuadsLoaded = tmpQuads
-
             _glDisableClientState _GL_COLOR_ARRAY
             _glDisableClientState _GL_TEXTURE_COORD_ARRAY
             _glDisableClientState _GL_VERTEX_ARRAY
 
+            _glDisable _GL_ALPHA_TEST
             _glDisable _GL_TEXTURE_2D
 
-            If Camera.Position.Y >= CloudsHeight Then DrawClouds
+            _glEnable _GL_CULL_FACE
+            DrawClouds
             _glDisable _GL_CULL_FACE
 
             _glPopMatrix
@@ -545,10 +548,6 @@ Sub _GL Static
                         K = K - Asc(T$, J)
                     Next J
                 Next I
-
-                Line (_Width - 514, _Height - 258)-(_Width - 1, _Height - 1), _RGB32(0), B
-                _PutImage (_Width - 513, _Height - 257), ContinentalSpline.Image
-                _PutImage (_Width - 257, _Height - 257), TerrainSpline.Image
             End If
 
             _Display
@@ -611,7 +610,7 @@ Sub Work Static
                 lodStep = _ShL(1, Chunk.LevelOfDetail)
                 For X = 0 To 15 Step lodStep: For Z = 0 To 15 Step lodStep
                         TX = PX + X: TZ = PZ + Z
-                        Chunk.Height(X, Z) = _Clamp(0, _ShR(ApplySpline(ContinentalSpline, GetContinentalNoise(TX, TZ)) + 3 * ApplySpline(TerrainSpline, GetTerrainNoise(TX, TZ)) + 4 * ApplySpline(DetailSpline, GetDetailNoise(TX, TZ)), 3), 255)
+                        Chunk.Height(X, Z) = _Clamp(0, (ApplySpline(ContinentalSpline, GetContinentalNoise(TX, TZ)) + 3 * ApplySpline(TerrainSpline, GetTerrainNoise(TX, TZ)) + 4 * ApplySpline(DetailSpline, GetDetailNoise(TX, TZ))) / 8, 255)
                         Chunk.Temperature(X, Z) = _Clamp(0, GetTemperatureNoise(TX, TZ) * 256, 255)
                         Chunk.Humidity(X, Z) = _Clamp(0, GetHumidityNoise(TX, TZ) * 256, 255)
                         Chunk.Features(X, Z) = _IIf(Chunk.Height(X, Z) > WaterLevel, GetFeatureNoise(TX, TZ), 0)
@@ -625,7 +624,7 @@ Sub Work Static
                 glVerticesCount(ChunkId).Transparent.Count = 0
                 For X = 0 To 15 Step lodStep: For Z = 0 To 15 Step lodStep
                         Height = Chunk.Height(X, Z)
-                        dHeight = Height - Int(Height)
+                        dHeight = Height - WaterLevel
                         Height = Int(Height)
                         For Y = 0 To Height - 2
                             Chunk.Blocks(X, Y, Z) = getBlockID("stone")
@@ -648,11 +647,16 @@ Sub Work Static
                         Chunk.MinimumHeight = _Clamp(0, Chunk.MinimumHeight, Height - 2)
                         Chunk.MaximumHeight = _Clamp(Height + 1, Chunk.MaximumHeight, 255)
                 Next Z, X
-                Chunk.State = ChunkState_Tree
+                Chunk.State = ChunkState_Features
 
-            Case ChunkState_Tree
+            Case ChunkState_Features
                 For X = 0 To 15: For Z = 0 To 15
-                        If Chunk.Features(X, Z) Then GenerateLTree PX + X, Chunk.Height(X, Z), PZ + Z, Chunk.Features(X, Z)
+                        Y = Int(Chunk.Height(X, Z)) + 1
+                        Select Case Chunk.Features(X, Z)
+                            Case 0:
+                            Case 1: GenerateLTree PX + X, Y, PZ + Z, 0
+                            Case 2: Chunk.Blocks(X, Y, Z) = getBlockID("pink_tulip")
+                        End Select
                 Next Z, X
                 Chunk.State = ChunkState_Blocks
 
@@ -679,7 +683,6 @@ Sub Work Static
                 Y0 = 1: Y1 = 254
                 Z0 = lodStep - 1: Z1 = 16 - lodStep
 
-                TextureHeight = TextureSize / TextureAtlasHeight
                 ChunkId = getChunkId(CX, CZ)
                 For Y = Chunk.MinimumHeight To Chunk.MaximumHeight
                     LayerCombination = Chunk.Layers(Y) Or _IIf(Y > 0, Chunk.Layers(Y - 1), 0) Or _IIf(Y < 255, Chunk.Layers(Y + 1), 0)
@@ -734,14 +737,15 @@ Sub Work Static
                             Face = _ShR(I, 2)
                             If _ReadBit(Visibility, Face) = 0 Then I = I + 3: _Continue
                             TextureId = Blocks(Block).Faces(Face)
-                            TextureOffset = Textures(TextureId).Y
+                            TextureOffsetX = Textures(TextureId).X
+                            TextureOffsetY = Textures(TextureId).Y
                             Light = _IIf(Face >= 4, 11, _IIf(Face = 3, 7, _IIf(Face = 2, 15, 9)))
                         End If
                         glVertices(VertexId, ChunkId).X = PX + X + CubeVertices(I).X * lodStep
                         glVertices(VertexId, ChunkId).Y = Y + CubeVertices(I).Y
                         glVertices(VertexId, ChunkId).Z = PZ + Z + CubeVertices(I).Z * lodStep
-                        glTextureCoords(VertexId, ChunkId).X = CubeTextureCoords(I).X
-                        glTextureCoords(VertexId, ChunkId).Y = (CubeTextureCoords(I).Y + TextureOffset) * TextureHeight
+                        glTextureCoords(VertexId, ChunkId).X = TextureOffsetX + _IIf(CubeTextureCoords(I).X, CalculatedTextureSize, 0)
+                        glTextureCoords(VertexId, ChunkId).Y = TextureOffsetY + _IIf(CubeTextureCoords(I).Y, CalculatedTextureSize, 0)
                         __color = AmbientOcclusion(PX + X, Y, PZ + Z, I, 15 - Light)
                         glColors(VertexId, ChunkId).X = _ShR(__color * _Red32(FinalColor), 8)
                         glColors(VertexId, ChunkId).Y = _ShR(__color * _Green32(FinalColor), 8)
@@ -757,28 +761,50 @@ Sub Work Static
                     Visibility = _ShR(XYZ, 16) And 63: X = _ShR(XYZ, 12) And 15: Y = _ShR(XYZ, 4) And 255: Z = XYZ And 15
                     Block = Chunk.Blocks(X, Y, Z)
                     If VertexId + 24 >= ChunkPipelineSize Then Exit While
-                    TemperatureColor = Chunk.Temperature(X, Z)
-                    HumidityColor = Chunk.Humidity(X, Z)
-                    FinalColor = _RGB32(191 + _ShR(TemperatureColor * 40, 8), 191 + _ShR(HumidityColor * 20, 8), 191 - _ShR(TemperatureColor * 30, 8))
-                    For I = 0 To 23
-                        If (I And 3) = 0 Then
-                            Face = _ShR(I, 2)
-                            If _ReadBit(Visibility, Face) = 0 Then I = I + 3: _Continue
-                            TextureId = Blocks(Block).Faces(Face)
-                            TextureOffset = Textures(TextureId).Y
-                            Light = _IIf(Face >= 4, 11, _IIf(Face = 3, 7, _IIf(Face = 2, 15, 9)))
-                        End If
-                        glVertices(VertexId, ChunkId).X = PX + X + CubeVertices(I).X * lodStep
-                        glVertices(VertexId, ChunkId).Y = Y + CubeVertices(I).Y
-                        glVertices(VertexId, ChunkId).Z = PZ + Z + CubeVertices(I).Z * lodStep
-                        glTextureCoords(VertexId, ChunkId).X = CubeTextureCoords(I).X
-                        glTextureCoords(VertexId, ChunkId).Y = (CubeTextureCoords(I).Y + TextureOffset) * TextureHeight
-                        __color = AmbientOcclusion(PX + X, Y, PZ + Z, I, 15 - Light)
-                        glColors(VertexId, ChunkId).X = _ShR(__color * _Red32(FinalColor), 8)
-                        glColors(VertexId, ChunkId).Y = _ShR(__color * _Green32(FinalColor), 8)
-                        glColors(VertexId, ChunkId).Z = _ShR(__color * _Blue32(FinalColor), 8)
-                        VertexId = VertexId + 1
-                    Next I
+                    ModelId = Blocks(Block).ModelId
+                    Select Case ModelId
+                        Case 0
+                            TemperatureColor = Chunk.Temperature(X, Z)
+                            HumidityColor = Chunk.Humidity(X, Z)
+                            FinalColor = _RGB32(191 + _ShR(TemperatureColor * 40, 8), 191 + _ShR(HumidityColor * 20, 8), 191 - _ShR(TemperatureColor * 30, 8))
+                            For I = 0 To 23
+                                If (I And 3) = 0 Then
+                                    Face = _ShR(I, 2)
+                                    If _ReadBit(Visibility, Face) = 0 Then I = I + 3: _Continue
+                                    TextureId = Blocks(Block).Faces(Face)
+                                    TextureOffsetX = Textures(TextureId).X
+                                    TextureOffsetY = Textures(TextureId).Y
+                                    Light = _IIf(Face >= 4, 11, _IIf(Face = 3, 7, _IIf(Face = 2, 15, 9)))
+                                End If
+                                glVertices(VertexId, ChunkId).X = PX + X + CubeVertices(I).X * lodStep
+                                glVertices(VertexId, ChunkId).Y = Y + CubeVertices(I).Y
+                                glVertices(VertexId, ChunkId).Z = PZ + Z + CubeVertices(I).Z * lodStep
+                                glTextureCoords(VertexId, ChunkId).X = TextureOffsetX + _IIf(CubeTextureCoords(I).X, CalculatedTextureSize, 0)
+                                glTextureCoords(VertexId, ChunkId).Y = TextureOffsetY + _IIf(CubeTextureCoords(I).Y, CalculatedTextureSize, 0)
+                                __color = AmbientOcclusion(PX + X, Y, PZ + Z, I, 15 - Light)
+                                glColors(VertexId, ChunkId).X = _ShR(__color * _Red32(FinalColor), 8)
+                                glColors(VertexId, ChunkId).Y = _ShR(__color * _Green32(FinalColor), 8)
+                                glColors(VertexId, ChunkId).Z = _ShR(__color * _Blue32(FinalColor), 8)
+                                VertexId = VertexId + 1
+                            Next I
+
+                        Case Else ' Custom Model
+                            TextureId = Blocks(Block).Faces(0)
+                            TextureOffsetX = Textures(TextureId).X
+                            TextureOffsetY = Textures(TextureId).Y
+                            For I = 0 To CustomModels(ModelId).Count - 1
+                                glVertices(VertexId, ChunkId).X = PX + X + CustomModels(ModelId).Vertices(I).X * lodStep
+                                glVertices(VertexId, ChunkId).Y = Y + CustomModels(ModelId).Vertices(I).Y
+                                glVertices(VertexId, ChunkId).Z = PZ + Z + CustomModels(ModelId).Vertices(I).Z * lodStep
+                                glTextureCoords(VertexId, ChunkId).X = TextureOffsetX + _IIf(CustomModels(ModelId).TextureCoords(I).X, CalculatedTextureSize, 0)
+                                glTextureCoords(VertexId, ChunkId).Y = TextureOffsetY + _IIf(CustomModels(ModelId).TextureCoords(I).Y, CalculatedTextureSize, 0)
+                                __color = 15 * Light
+                                glColors(VertexId, ChunkId).X = __color
+                                glColors(VertexId, ChunkId).Y = __color
+                                glColors(VertexId, ChunkId).Z = __color
+                                VertexId = VertexId + 1
+                            Next I
+                    End Select
                 Wend
                 glVerticesCount(ChunkId).Transparent.Count = VertexId - glVerticesCount(ChunkId).Opaque.Count
 
@@ -814,7 +840,17 @@ Function GetHumidityNoise (X As Long, Z As Long) Static
     GetHumidityNoise = Fractal2(X, Z, 1024, 0, 4) * 0.5 + 0.5
 End Function
 Function GetFeatureNoise (X As Long, Z As Long) Static
-    GetFeatureNoise = _IIf(InRange(0.1, Fractal2(X, Z, 4, 2, 8), 0.15) _AndAlso InRange(-0.5, Fractal2(X, Z, 8, 2, 9), -0.45), _Clamp(0, Fractal2(TX, TZ, 256, 0, 5) * 2 + 2, 3), 0)
+    Static As Single N
+    If InRange(0.1, Fractal2(X, Z, 4, 2, 8), 0.2) _AndAlso InRange(-0.5, Fractal2(X, Z, 8, 2, 9), -0.4) Then
+        GetFeatureNoise = 1 ' Tree
+        Exit Function
+    End If
+    N = Fractal2(X, Z, 16, 2, 10)
+    If N > 0.3 Then
+        GetFeatureNoise = 2 ' Flower
+    Else
+        GetFeatureNoise = 0 ' Nothing
+    End If
 End Function
 
 '$Include:'bi/Tree.bm'
@@ -960,12 +996,12 @@ End Sub
 
 '======== Game Files ========
 Sub ReadSettings
-    Open "settings/gamesettings.dat" For Binary As #99
+    Open "saves/gamesettings.dat" For Binary As #99
     Get #99, , GameSettings
     Close #99
 End Sub
 Sub WriteSettings
-    Open "settings/gamesettings.dat" For Binary As #99
+    Open "saves/gamesettings.dat" For Binary As #99
     Put #99, , GameSettings
     Close #99
 End Sub
