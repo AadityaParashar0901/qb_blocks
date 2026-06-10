@@ -11,7 +11,7 @@ Function Fractal2! (x As Single, y As Single, s As Single, o As _Unsigned _Byte,
     amplitude = 1
     frequency = 1 / s
 
-    nx = x + m * 1000: ny = y + m * 1000
+    nx = x + m * 10: ny = y + m * 10
     For i = 0 To o
 
         total = total + PerlinNoise2(nx * frequency, ny * frequency) * amplitude
@@ -23,7 +23,7 @@ Function Fractal2! (x As Single, y As Single, s As Single, o As _Unsigned _Byte,
 
     Next i
 
-    Fractal2! = total / maxValue
+    Fractal2! = _Clamp(-1, total / maxValue * 3, 1)
 
 End Function
 
@@ -36,7 +36,7 @@ Function Fractal3! (x As Single, y As Single, z As Single, s As Single, o As _Un
     amplitude = 1
     frequency = 1 / s
 
-    nx = x + m * 1000: ny = y + m * 1000: nz = z + m * 1000
+    nx = x + m * 10: ny = y + m * 10: nz = z + m * 10
     For i = 0 To o
 
         total = total + PerlinNoise3!(nx * frequency, ny * frequency, nz * frequency) * amplitude
@@ -48,7 +48,7 @@ Function Fractal3! (x As Single, y As Single, z As Single, s As Single, o As _Un
 
     Next
 
-    Fractal3! = total / maxValue
+    Fractal3! = _Clamp(-1, total / maxValue * 3, 1)
 
 End Function
 

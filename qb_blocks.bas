@@ -39,7 +39,7 @@ End Type
 Dim Shared As GameSettings GameSettings
 
 Const GameVersion = 6.3
-Const MaxRenderDistance = 5
+Const MaxRenderDistance = 17
 Const MaxJobs = 4
 GameSettings.Fov = 90
 GameSettings.Fog = 0
@@ -68,9 +68,9 @@ Type Spline
     As Long Image
 End Type
 Dim Shared As Spline ContinentalSpline, TerrainSpline, DetailSpline
-CreateSpline ContinentalSpline, "0,31,31,31,191,191,255,191"
-CreateSpline TerrainSpline, "0,191,63,31,191,127,255,191"
-CreateSpline DetailSpline, "0,0,63,31,191,63,255,191"
+CreateSpline ContinentalSpline, _ReadFile$("assets/splines/continental.txt")
+CreateSpline TerrainSpline, _ReadFile$("assets/splines/terrain.txt")
+CreateSpline DetailSpline, _ReadFile$("assets/splines/detail.txt")
 
 '================ App State ================
 
@@ -373,6 +373,7 @@ Sub Tick Static
     lastTime = Timer(0.01)
     GameTickGraph = Mid$(GameTickGraph, 5) + MKI$(1000 * dTime)
 
+    If AppState.CurrentState <> AppState_Game_Play Then Exit Sub
     GameState.SkyColor.X = 0: GameState.SkyColor.Y = 127: GameState.SkyColor.Z = 255
     GameState.glSkyColor.X = 0: GameState.glSkyColor.Y = 0.5: GameState.glSkyColor.Z = 1
 End Sub
@@ -520,6 +521,7 @@ Sub _GL Static
 
             _glEnable _GL_CULL_FACE
             DrawClouds
+            DrawSkyBox
             _glDisable _GL_CULL_FACE
 
             _glPopMatrix
@@ -610,10 +612,12 @@ Sub Work Static
                 lodStep = _ShL(1, Chunk.LevelOfDetail)
                 For X = 0 To 15 Step lodStep: For Z = 0 To 15 Step lodStep
                         TX = PX + X: TZ = PZ + Z
-                        Chunk.Height(X, Z) = _Clamp(0, (ApplySpline(ContinentalSpline, GetContinentalNoise(TX, TZ)) + 3 * ApplySpline(TerrainSpline, GetTerrainNoise(TX, TZ)) + 4 * ApplySpline(DetailSpline, GetDetailNoise(TX, TZ))) / 8, 255)
+                        Chunk.Height(X, Z) = _Clamp(0, (ApplySpline(ContinentalSpline, GetContinentalNoise(TX, TZ)) + 3 * ApplySpline(TerrainSpline, GetTerrainNoise(TX, TZ)) + 2 * ApplySpline(DetailSpline, GetDetailNoise(TX, TZ)) - GetErosionNoise(TX, TZ)) / 8, 255)
                         Chunk.Temperature(X, Z) = _Clamp(0, GetTemperatureNoise(TX, TZ) * 256, 255)
                         Chunk.Humidity(X, Z) = _Clamp(0, GetHumidityNoise(TX, TZ) * 256, 255)
                         Chunk.Features(X, Z) = _IIf(Chunk.Height(X, Z) > WaterLevel, GetFeatureNoise(TX, TZ), 0)
+                        Chunk.Blocks(X, 0, Z) = getBlockID("bedrock")
+                        Chunk.Layers(0) = 1
                 Next Z, X
                 Chunk.State = ChunkState_HeightMap
 
@@ -626,16 +630,18 @@ Sub Work Static
                         Height = Chunk.Height(X, Z)
                         dHeight = Height - WaterLevel
                         Height = Int(Height)
-                        For Y = 0 To Height - 2
+                        CaveHeight = 255
+                        Biome = _IIf(Chunk.Temperature(X, Z) > 191, 3, _IIf(Chunk.Temperature(X, Z) > 63, 2, 1))
+                        For Y = 1 To Height - 2
                             Chunk.Blocks(X, Y, Z) = getBlockID("stone")
                             Chunk.Layers(Y) = Chunk.Layers(Y) Or 1
                         Next Y
                         For Y = _Clamp(0, Height - 2, 255) To Height
-                            Chunk.Blocks(X, Y, Z) = _IIf(Y = Height, getBlockID("grass"), getBlockID("dirt"))
+                            Chunk.Blocks(X, Y, Z) = _IIf(Y = Height, _IIf(Biome = 3, getBlockID("snow"), _IIf(Biome = 2, getBlockID("grass"), getBlockID("sand"))), getBlockID("dirt"))
                             Chunk.Layers(Y) = Chunk.Layers(Y) Or 1
                         Next Y
                         For Y = Height To WaterLevel
-                            Block = _IIf(dHeight < 0.5, getBlockID("water"), getBlockID("grass"))
+                            Block = _IIf(dHeight < 0.5, getBlockID("water"), _IIf(Biome = 3, getBlockID("snow"), _IIf(Biome = 2, getBlockID("grass"), getBlockID("sand"))))
                             Chunk.Blocks(X, Y, Z) = Block
                             Chunk.Layers(Y) = Chunk.Layers(Y) Or _IIf(isTransparent(Block), 2, 1)
                         Next Y
@@ -644,7 +650,7 @@ Sub Work Static
                             Chunk.Layers(Y) = Chunk.Layers(Y) Or 4
                         Next Y
 
-                        Chunk.MinimumHeight = _Clamp(0, Chunk.MinimumHeight, Height - 2)
+                        Chunk.MinimumHeight = _Clamp(0, Chunk.MinimumHeight, _Min(CaveHeight, Height) - 2)
                         Chunk.MaximumHeight = _Clamp(Height + 1, Chunk.MaximumHeight, 255)
                 Next Z, X
                 Chunk.State = ChunkState_Features
@@ -652,10 +658,13 @@ Sub Work Static
             Case ChunkState_Features
                 For X = 0 To 15: For Z = 0 To 15
                         Y = Int(Chunk.Height(X, Z)) + 1
+                        Biome = _IIf(Chunk.Temperature(X, Z) > 191, 3, _IIf(Chunk.Temperature(X, Z) > 63, 2, 1))
                         Select Case Chunk.Features(X, Z)
                             Case 0:
-                            Case 1: GenerateLTree PX + X, Y, PZ + Z, 0
+                            Case 1: GenerateLTree PX + X, Y, PZ + Z, Biome
                             Case 2: Chunk.Blocks(X, Y, Z) = getBlockID("pink_tulip")
+                            Case 3: Chunk.Blocks(X, Y, Z) = getBlockID("white_tulip")
+                            Case 4: Chunk.Blocks(X, Y, Z) = getBlockID("allium")
                         End Select
                 Next Z, X
                 Chunk.State = ChunkState_Blocks
@@ -825,29 +834,33 @@ Sub Work Static
     Worker_Jobs = 0
 End Sub
 Function GetContinentalNoise (X As Long, Z As Long) Static
-    GetContinentalNoise = Fractal2(X, Z, 1024, 0, 0) * 0.5 + 0.5
+    GetContinentalNoise = Fractal2(X, Z, 1024, 1, 0) * 0.5 + 0.5
 End Function
 Function GetTerrainNoise (X As Long, Z As Long) Static
-    GetTerrainNoise = Fractal2(X, Z, 256, 0, 1) * 0.5 + 0.5
+    GetTerrainNoise = Fractal2(X, Z, 256, 3, 1) * 0.5 + 0.5
 End Function
 Function GetDetailNoise (X As Long, Z As Long) Static
-    GetDetailNoise = Fractal2(X, Z, 256, 3, 2) * 0.5 + 0.5
+    GetDetailNoise = Fractal2(X, Z, 256, 5, 2) * 0.5 + 0.5
+End Function
+Function GetErosionNoise (X As Long, Z As Long) Static
+    GetErosionNoise = 64 * Abs(Fractal2(X, Z, 256, 3, 3))
 End Function
 Function GetTemperatureNoise (X As Long, Z As Long) Static
-    GetTemperatureNoise = Fractal2(X, Z, 1024, 0, 3) * 0.5 + 0.5
+    GetTemperatureNoise = Fractal2(X, Z, 1024, 2, 4) * 0.5 + 0.5
 End Function
 Function GetHumidityNoise (X As Long, Z As Long) Static
-    GetHumidityNoise = Fractal2(X, Z, 1024, 0, 4) * 0.5 + 0.5
+    GetHumidityNoise = Fractal2(X, Z, 1024, 0, 5) * 0.5 + 0.5
 End Function
 Function GetFeatureNoise (X As Long, Z As Long) Static
     Static As Single N
-    If InRange(0.1, Fractal2(X, Z, 4, 2, 8), 0.2) _AndAlso InRange(-0.5, Fractal2(X, Z, 8, 2, 9), -0.4) Then
+    If InRange(0.1, Fractal2(X, Z, 4, 2, 6), 0.2) _AndAlso InRange(-0.5, Fractal2(X, Z, 8, 2, 7), -0.4) Then
         GetFeatureNoise = 1 ' Tree
         Exit Function
     End If
-    N = Fractal2(X, Z, 16, 2, 10)
-    If N > 0.3 Then
-        GetFeatureNoise = 2 ' Flower
+    N = Fractal2(X, Z, 16, 2, 8)
+    If N > 0.4 And N < 0.5 Then
+        N = Fractal2(X, Z, 16, 0, 9)
+        GetFeatureNoise = _Clamp(2, N + 3, 4) ' Flower
     Else
         GetFeatureNoise = 0 ' Nothing
     End If
@@ -861,9 +874,9 @@ Function AmbientOcclusion~%% (X As Long, Y As Integer, Z As Long, vertexIndex As
     dX = _ShL(CubeVertices(vertexIndex).X, 1) - 1
     dY = _ShL(CubeVertices(vertexIndex).Y, 1) - 1
     dZ = _ShL(CubeVertices(vertexIndex).Z, 1) - 1
-    corner = Sgn(getBlock(X + dX, Y + dY, Z + dZ))
-    side1 = Sgn(getBlock(X + dX, Y + dY, Z))
-    side2 = Sgn(getBlock(X, Y + dY, Z + dZ))
+    corner = isFullBlock(getBlock(X + dX, Y + dY, Z + dZ))
+    side1 = isFullBlock(getBlock(X + dX, Y + dY, Z))
+    side2 = isFullBlock(getBlock(X, Y + dY, Z + dZ))
     AmbientOcclusion = 255 - 15 * _Clamp(0, side1 + side2 + corner + CurrentLight, 15)
 End Function
 Function getChunkId~& (X As Long, Z As Long) Static
@@ -930,13 +943,16 @@ End Function
 
 '======== GL ========
 Sub DrawSkyBox
-    _glEnableClientState _GL_VERTEX_ARRAY
-    _glEnableClientState _GL_COLOR_ARRAY
-    _glVertexPointer 3, _GL_SHORT, 0, _Offset(SkyBoxVertices(0))
-    _glColorPointer 4, _GL_UNSIGNED_BYTE, 0, _Offset(SkyBoxColors(0))
-    _glDrawArrays _GL_QUADS, 0, 24
-    _glDisableClientState _GL_COLOR_ARRAY
-    _glDisableClientState _GL_VERTEX_ARRAY
+    _glBegin _GL_QUADS
+    _glVertex3i 0, 272, 0
+    _glColor3ub 255, 255, 0
+    _glVertex3i 256, 272, 0
+    _glColor3ub 255, 255, 0
+    _glVertex3i 256, 272, 256
+    _glColor3ub 255, 255, 0
+    _glVertex3i 0, 272, 256
+    _glColor3ub 255, 255, 0
+    _glEnd
 End Sub
 
 '$Include:'lib/gl_generateTexture.bm'

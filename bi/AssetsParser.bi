@@ -38,7 +38,7 @@ For I = 1 To ListStringLength(FileContents$)
                     Y~% = 0
                 Case "blocks": CurrentMode = 2: I = I + 1
                     ReDim Shared Blocks(0) As BlockData
-                    ReDim Shared isTransparent(0) As _Unsigned _Bit
+                    ReDim Shared As _Unsigned _Bit isTransparent(0), isFullBlock(0)
                     ReDim Shared omitBlockFace(0) As _Unsigned _Byte
                     isTransparent(0) = 1
                     omitBlockFace(0) = 63
@@ -69,10 +69,11 @@ For I = 1 To ListStringLength(FileContents$)
                 Case "name": I = I + 2
                     CurrentBlockID = CurrentBlockID + 1
                     ReDim _Preserve Shared Blocks(1 To CurrentBlockID) As BlockData
-                    ReDim _Preserve Shared isTransparent(0 To CurrentBlockID) As _Unsigned _Bit
+                    ReDim _Preserve Shared As _Unsigned _Bit isTransparent(0 To CurrentBlockID), isFullBlock(0 To CurrentBlockID)
                     ReDim _Preserve Shared omitBlockFace(0 To CurrentBlockID) As _Unsigned _Byte
                     Blocks(CurrentBlockID).Name = RemoveDoubleQuotes$(ListStringGet(FileContents$, I))
                     BlockMode = 1
+                    isFullBlock(CurrentBlockID) = 1
                     FileLog "Block Name(" + ByteToHex$(CurrentBlockID) + "): " + Blocks(CurrentBlockID).Name
                 Case "textures": If BlockMode = 0 Then _Continue
                     I = I + 2
@@ -106,6 +107,7 @@ For I = 1 To ListStringLength(FileContents$)
                         Blocks(CurrentBlockID).ModelId = J
                         Exit For
                     Next J
+                    isFullBlock(CurrentBlockID) = 0
                     If Blocks(CurrentBlockID).ModelId = 0 Then WriteLog "Error: Model '" + Blocks(CurrentBlockID).ModelName + "' not found!"
             End Select
 
@@ -158,7 +160,7 @@ For I = 1 To TotalBlocks
     ListStringAdd BlockHashTable_List(Hash~%%), Blocks(I).Name
     BlockHashTable_Length(Hash~%%) = BlockHashTable_Length(Hash~%%) + 1
     BlockHashTable_Code(Hash~%%) = BlockHashTable_Code(Hash~%%) + MKI$(I)
-    FileLog "isTransparent(" + Blocks(I).Name + "): " + _IIf(isTransparent(I), "True", "False")
+    FileLog "[" + Blocks(I).Name + "] => isTransparent: " + _IIf(isTransparent(I), "True", "False") + ", isFullBlock: " + _IIf(isFullBlock(I), "True", "False")
 Next I
 For I = 0 To 255
     If BlockHashTable_List(I) = "" Then _Continue

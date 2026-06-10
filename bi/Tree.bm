@@ -1,53 +1,9 @@
-Function GenerateLSystem$ (Axiom$, TreeType As _Unsigned _Byte)
-    Dim As String Current, NextStr
-    Dim As String * 1 C
-    Current = Axiom$
-    For I = 1 To Len(Current)
-        Asc(C, 1) = Asc(Current, I)
-        Select Case TreeType
-            '================ Oak =================
-            Case 0
-                Select Case C
-                    Case "F"
-                        NextStr = NextStr + "FF"
-                    Case "X"
-                        NextStr = NextStr + "[&R+FFFFB][&R-FFFFB][&R++FFFB][&R--FFFB]"
-                End Select
-                '================ Pine =================
-            Case 1
-                Select Case C
-                    Case "F"
-                        NextStr = NextStr + "FF"
-                    Case "X"
-                        NextStr = NextStr + "[+FFS][-FFS][++FFS][--FFS]FX"
-                End Select
-                '================ Dead =================
-            Case 2
-                Select Case C
-                    Case "F"
-                        NextStr = NextStr + "FF"
-                    Case "X"
-                        NextStr = NextStr + "[R+FFFF][R-FFFF][R++FFF][R--FFF]"
-                End Select
-                '================ Acacia =================
-            Case 3
-                Select Case C
-                    Case "F"
-                        NextStr = NextStr + "FF"
-                    Case "X"
-                        NextStr = NextStr + "&&&&[R+FFFFB][R-FFFFB][R++FFFFB][R--FFFFB]"
-                End Select
-        End Select
-    Next I
-    GenerateLSystem$ = NextStr
-End Function
 Sub GenerateLTree (WX As Integer, WY As Integer, WZ As Integer, TreeType As _Unsigned _Byte)
     Dim As String S
     Select Case TreeType
-        Case 0: S = GenerateLSystem$("FFFX", TreeType) ' Oak
-        Case 1: S = GenerateLSystem$("FFFFFX", TreeType) ' Pine
-        Case 2: S = GenerateLSystem$("FFFX", 0) ' Oak
-        Case 3: S = GenerateLSystem$("FFFFX", TreeType) ' Acacia
+        Case 1: S = "FFFFF[R+FFFFS][R-FFFFS]&&FF[R+FFFFFS][R-FFFFFS]&&FF[R++FFFS][R--FFFS]" ' Acacia
+        Case 2: S = "FFFF[&R+FFFFB][&R-FFFFB][&R++FFFB][&R--FFFB]" ' Oak
+        Case 3: S = "FFFFFFFF[&&+FFS][&&-FFS]FFF[&&+FFS][&&-FFS]FFF[&&+FS][&&-FS]FF[&&+FS][&&-FS]FFS" ' Pine
     End Select
     Dim As Integer SP
     Dim As TurtleState T

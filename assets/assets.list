@@ -21,10 +21,11 @@ textures {
 	sandstone_bottom;
 	sandstone_top;
 	cobblestone;
-	mossy_cobblestone;
-	deepslate;
 	water_still;
 	pink_tulip;
+  white_tulip;
+  allium;
+  bedrock;
 }
 
 models {
@@ -57,8 +58,9 @@ blocks {
 	name = "stone_bricks", textures = 16;
 	name = "sandstone", textures = [17, 17, 19, 18, 17, 17];
 	name = "cobblestone", textures = 20;
-	name = "mossy_cobblestone", textures = 21;
-	name = "deepslate", textures = 22;
-	name = "water", textures = [0, 0, 23, 0, 0, 0], transparent, omit;
-	name = "pink_tulip", textures = 24, transparent, model = "flower";
+	name = "water", textures = [0, 0, 21, 0, 0, 0], transparent, omit;
+	name = "pink_tulip", textures = 22, flora, transparent, model = "flower";
+  name = "white_tulip", textures = 23, flora, transparent, model = "flower";
+  name = "allium", textures = 24, flora, transparent, model = "flower";
+  name = "bedrock", textures = 25;
 }
